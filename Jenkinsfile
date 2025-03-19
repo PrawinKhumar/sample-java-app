@@ -1,13 +1,15 @@
 pipeline {
-    agent any
+    agent { label 'PBuildNode' }
 
     environment {
-        SONARQUBE_SERVER = 'SonarQubeServer'
-        DOCKER_IMAGE = "prawinkhumar/sample-java-app:latest"
+        SONARQUBE_SERVER = 'SonarQube-Server'
+        DOCKER_IMAGE = 'prawinkhumar/sample-java-app:latest'
+        REGISTRY_CREDENTIALS = 'dockerhub-creds'
     }
 
     stages {
-        stage('Checkout') {
+
+        stage('Checkout Code') {
             steps {
                 git url: 'https://github.com/PrawinKhumar/sample-java-app.git', branch: 'main'
             }
@@ -27,48 +29,48 @@ pipeline {
 
         stage('SCA - OWASP Dependency Check') {
             steps {
-                withCredentials([string(credentialsId: 'nvd-api-key', variable: 'NVD_API_KEY')]) {
-                    sh '''
-                        mkdir -p dependency-check-report
-                        docker run --rm \
-                            -v $(pwd):/src \
-                            -e NVD_API_KEY=$NVD_API_KEY \
-                            owasp/dependency-check \
-                            --project sample-java-app \
-                            --scan /src \
-                            --format HTML \
-                            --out /src/dependency-check-report
-                    '''
-                }
+                sh '''
+                    mkdir -p dependency-check-report
+                    docker run --rm \
+                        -v $(pwd):/src \
+                        owasp/dependency-check \
+                        --project sample-java-app \
+                        --scan /src \
+                        --format HTML \
+                        --out /src/dependency-check-report
+                '''
             }
         }
 
         stage('SAST & Quality Gate - SonarQube') {
             steps {
-                withSonarQubeEnv("${SonarQube-Server}") {
-                    sh 'mvn sonar:sonar'
+                withSonarQubeEnv("${SONARQUBE_SERVER}") {
+                    sh 'mvn sonar:sonar -Dsonar.projectKey=sample-java-app'
                 }
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                sh "docker build -t ${DOCKER_IMAGE} ."
+                sh 'docker build -t $DOCKER_IMAGE .'
             }
         }
 
         stage('Scan Docker Image - Trivy') {
             steps {
-                sh "trivy image ${DOCKER_IMAGE} || true"
+                sh '''
+                    docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+                    aquasec/trivy image $DOCKER_IMAGE
+                '''
             }
         }
 
         stage('Push Docker Image') {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                withCredentials([usernamePassword(credentialsId: "${REGISTRY_CREDENTIALS}", usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
                     sh '''
                         echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-                        docker push ${DOCKER_IMAGE}
+                        docker push $DOCKER_IMAGE
                     '''
                 }
             }
@@ -76,14 +78,11 @@ pipeline {
 
         stage('Smoke Test') {
             steps {
-                sh 'curl --fail http://localhost:8080 || echo "Smoke test failed or application not running yet."'
+                sh '''
+                    echo "Running Smoke Test..."
+                    curl --fail http://localhost:8080 || echo "Smoke test failed or service not yet deployed."
+                '''
             }
-        }
-    }
-
-    post {
-        always {
-            archiveArtifacts artifacts: 'dependency-check-report/*.html', fingerprint: true
         }
     }
 }
