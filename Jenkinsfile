@@ -45,7 +45,7 @@ pipeline {
 
         stage('SAST & Quality Gate - SonarQube') {
             steps {
-                withSonarQubeEnv("${SONARQUBE_SERVER}") {
+                withSonarQubeEnv("${SonarQube-Server}") {
                     sh 'mvn sonar:sonar'
                 }
             }
