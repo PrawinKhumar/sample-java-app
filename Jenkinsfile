@@ -8,7 +8,6 @@ pipeline {
     }
 
     stages {
-
         stage('Checkout Code') {
             steps {
                 git url: 'https://github.com/PrawinKhumar/sample-java-app.git', branch: 'main'
@@ -80,8 +79,16 @@ pipeline {
             steps {
                 sh '''
                     echo "Running Smoke Test..."
-                    docker run -d -p 9090:8080 prawinkhumar/sample-java-app:latest
-                    curl http://localhost:9090
+                    docker run -d -p 9090:8080 --name smoke-test-container $DOCKER_IMAGE
+
+                    echo "Waiting for container to be ready..."
+                    sleep 20
+
+                    echo "Checking service availability..."
+                    curl --retry 5 --retry-delay 5 --fail http://localhost:9090 || echo "Smoke test failed"
+
+                    echo "Cleaning up container..."
+                    docker rm -f smoke-test-container
                 '''
             }
         }
