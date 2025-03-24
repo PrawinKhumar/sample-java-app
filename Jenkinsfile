@@ -80,7 +80,8 @@ pipeline {
             steps {
                 sh '''
                     echo "Running Smoke Test..."
-                    curl --fail http://localhost:8080 || echo "Smoke test failed or service not yet deployed."
+                    docker run -d -p 9090:8080 prawinkhumar/sample-java-app:latest
+                    curl http://localhost:9090
                 '''
             }
         }
